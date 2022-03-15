@@ -47,7 +47,7 @@ impl Chip8 {
     fn init(file_path: &str) -> Chip8 {
         let mut chip8 = Chip8 {
             memory: [0; MEM_SIZE],
-            pc: 0,
+            pc: START_ADDR as u16,
             ir: 0,
             stack: Vec::new(),
             delay_t: 0,
@@ -79,6 +79,81 @@ pub fn load_program(chip8: &mut Chip8, file_path: &str) {
     }
 }
 
+fn is_clear(instr: u16) -> bool {
+    (instr & 0x0FFF) == 0x0E0 
+}
+
+fn emulate_cycle(chip: &mut Chip8) {
+    let pc: usize = chip.pc as usize;
+    let instr: u16 = (chip.memory[pc] as u16) << 8 | chip.memory[pc+1] as u16;  
+    // println!("{:#x}", instr);
+
+    let opcode: u16 = instr & 0xF000;
+    chip.pc += 2;
+
+    match opcode {
+        0x0 => { 
+            if is_clear(instr) {
+                // clear the screen
+                chip.display.fill(0);
+            }
+        }
+        0x1000 => {
+            // jump
+            // println!("setting pc to {:#x}", (instr & 0x0FFF));
+            chip.pc = instr & 0x0FFF;
+        }
+        0x6000 => {
+            // set register vx 
+            let reg_idx: usize = ((instr & 0x0F00) >> 8) as usize;
+            chip.registers[reg_idx] = (instr & 0x00FF) as u8;
+        }
+        0x7000 => {
+            // register ops 
+            let reg_idx: usize = ((instr & 0x0F00) >> 8) as usize;
+            chip.registers[reg_idx] += (instr & 0x00FF) as u8;
+        }
+        0xa000 => {
+            // set index register
+            chip.ir = instr & 0x0FFF;
+        }
+        0xd000 => {
+            // display to screen
+            let x: usize = ((instr & 0x0F00) >> 8) as usize;
+            let y: usize = ((instr & 0x00F0) >> 4) as usize;
+            let sprite_height = instr & 0x000F;
+            let vx = (chip.registers[x] as usize) & 63; // modulo
+            let vy = (chip.registers[y] as usize) & 31;
+            let mut collide_flag: u8 = 0;
+
+            for row in 0..sprite_height {
+                if vy + row as usize == DISPLAY_HEIGHT as usize {
+                    break;
+                }
+
+                let mut sprite: u8 = chip.memory[(chip.ir + row) as usize];
+                for col in (0..8).rev() {
+                    if vx + col == DISPLAY_WIDTH {
+                        break;
+                    }
+
+                    let i = DISPLAY_WIDTH * (vy + row as usize) + (vx + col as usize);
+                    if (chip.display[i] == 0x1) && (sprite & 0x1) == 0x1 {
+                        collide_flag = 1;
+                    }
+                    chip.display[i] |= sprite & 0x1; 
+                    sprite >>= 1;
+                }
+            }
+
+            chip.registers[0xF] = collide_flag;
+        }
+        _ =>  { 
+            panic!("Encountered an unknown code {:#x}", opcode);
+        }
+    }
+}
+
 fn main() {
 
     let args: Vec<String> = env::args().collect();
@@ -91,8 +166,12 @@ fn main() {
     }
 
     let file_path = &args[1];
-    let mut chip8 = Chip8::init(file_path);
+    let mut chip = Chip8::init(file_path);
 
+    // start fetching
+    while true {
+        emulate_cycle(&mut chip);
+    }
 }
 
 
@@ -103,15 +182,15 @@ mod tests {
     #[test]
     fn load_program_correctly() {
         let file_path = "programs/test_opcode.ch8";
-        let chip8 = Chip8::init(file_path);
-        assert_eq!(chip8.memory[START_ADDR], 0x12);
-        assert_eq!(chip8.memory[START_ADDR+1], 0x4e);
+        let chip = Chip8::init(file_path);
+        assert_eq!(chip.memory[START_ADDR], 0x12);
+        assert_eq!(chip.memory[START_ADDR+1], 0x4e);
     } 
 
     #[test]
     fn load_fonts_correctly() {
         let file_path = "programs/test_opcode.ch8";
-        let chip8 = Chip8::init(file_path);
-        assert_eq!(chip8.memory[FONT_START_ADDR..FONT_END_ADDR], FONTS[..]);
+        let chip = Chip8::init(file_path);
+        assert_eq!(chip.memory[FONT_START_ADDR..FONT_END_ADDR], FONTS[..]);
     } 
 }
