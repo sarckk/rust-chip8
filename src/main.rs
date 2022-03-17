@@ -1,9 +1,12 @@
+extern crate minifb;
+
 use std::process;
 use std::env;
 use std::io::Read;
 use std::io::BufReader;
 use std::fs;
 use std::fs::File;
+use minifb::{Key, Window, WindowOptions};
 
 const START_ADDR: usize = 0x200;
 const FONT_START_ADDR: usize = 0x50; 
@@ -11,7 +14,9 @@ const FONT_END_ADDR: usize = 0xA0;
 const MEM_SIZE: usize = 4096; 
 const DISPLAY_WIDTH: usize = 64; 
 const DISPLAY_HEIGHT: usize = 32; 
+const PX_SCALING: usize = 10;  // pixel scaling factor
 const NUM_REGISTERS: usize = 16; 
+const ON_PIXEL: u32 = 0x00FFFFFF; // white pixel
 
 static FONTS: [u8; 5*16] = [
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
@@ -155,7 +160,6 @@ fn emulate_cycle(chip: &mut Chip8) {
 }
 
 fn main() {
-
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
@@ -168,9 +172,40 @@ fn main() {
     let file_path = &args[1];
     let mut chip = Chip8::init(file_path);
 
+    let win_width = DISPLAY_WIDTH * PX_SCALING;
+    let win_height = DISPLAY_HEIGHT * PX_SCALING;
+    let mut buffer: Vec<u32> = vec![0; win_width * win_height];
+
+    let mut window = Window::new (
+        "CHIP-8",
+        win_width,
+        win_height,
+        WindowOptions::default(),
+    ).unwrap_or_else(|e| {
+        panic!("{}", e);
+    });
+
+    window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
+
     // start fetching
-    while true {
+    while window.is_open() && !window.is_key_down(Key::Escape) {
         emulate_cycle(&mut chip);
+
+        for (i, px) in chip.display.into_iter().enumerate() {
+            // px is u8, either 0x1 or 0x0
+            let row = i / DISPLAY_WIDTH;
+            let col = i % DISPLAY_WIDTH;
+
+            for row_offset in 0..PX_SCALING  {
+                let buf_idx = row*win_width*PX_SCALING + col*PX_SCALING + row_offset*win_width;
+                buffer[buf_idx..buf_idx+PX_SCALING]
+                    .fill(if px == 0 {0} else {ON_PIXEL});
+            }
+        }
+
+        window
+            .update_with_buffer(&buffer, win_width, win_height)
+            .unwrap();
     }
 }
 
