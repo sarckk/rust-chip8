@@ -4,7 +4,6 @@ use std::process;
 use std::env;
 use std::io::Read;
 use std::io::BufReader;
-use std::fs;
 use std::fs::File;
 use minifb::{Key, Window, WindowOptions};
 
@@ -73,7 +72,7 @@ pub fn load_fonts(chip8: &mut Chip8) {
 }
 
 pub fn load_program(chip8: &mut Chip8, file_path: &str) {
-    let mut f = File::open(file_path).expect("Error: File not found");
+    let f = File::open(file_path).expect("Error: File not found");
     let mut reader = BufReader::new(f);
     let mut buf = Vec::new();
 
@@ -84,8 +83,24 @@ pub fn load_program(chip8: &mut Chip8, file_path: &str) {
     }
 }
 
-fn is_clear(instr: u16) -> bool {
-    (instr & 0x0FFF) == 0x0E0 
+fn get_x(instr: u16) -> usize {
+    ((instr & 0x0F00) >> 8) as usize
+}
+
+fn get_y(instr: u16) -> usize {
+    ((instr & 0x00F0) >> 4) as usize
+}
+
+fn get_n(instr: u16) -> u8 {
+    (instr & 0x000F) as u8
+}
+
+fn get_nn(instr: u16) -> u8 {
+    (instr & 0x00FF) as u8
+}
+
+fn get_nnn(instr: u16) -> u16 {
+    instr & 0x0FFF
 }
 
 fn emulate_cycle(chip: &mut Chip8) {
@@ -96,37 +111,116 @@ fn emulate_cycle(chip: &mut Chip8) {
     let opcode: u16 = instr & 0xF000;
     chip.pc += 2;
 
+    let x = get_x(instr);
+    let y = get_y(instr);
+    let n = get_n(instr);
+    let nn = get_nn(instr);
+    let nnn = get_nnn(instr);
+
     match opcode {
         0x0 => { 
-            if is_clear(instr) {
-                // clear the screen
-                chip.display.fill(0);
+            match instr & 0x0FFF {
+                0x0E0 => {
+                    // clear display
+                    chip.display.fill(0);
+                }
+                0x0EE => {
+                    // return from subroutine
+                    chip.pc = chip.stack.pop().unwrap();
+                }
+                _ => ()
             }
         }
         0x1000 => {
             // jump
-            // println!("setting pc to {:#x}", (instr & 0x0FFF));
-            chip.pc = instr & 0x0FFF;
+            chip.pc = nnn;
+        }
+        0x2000 => {
+            // subroutine call
+            chip.stack.push(chip.pc);
+            chip.pc = nnn;
+        }
+        0x3000 => {
+            // skip if eq
+            let vx = chip.registers[x];
+            if vx == nn { chip.pc += 2; }
+        }
+        0x4000 => {
+            // skip if neq
+            let vx = chip.registers[x];
+            if vx != nn { chip.pc += 2; }
+        }
+        0x5000 => {
+            // skip if neq
+            let vx = chip.registers[x];
+            let vy = chip.registers[y];
+            if vx == vy { chip.pc += 2; }
         }
         0x6000 => {
-            // set register vx 
-            let reg_idx: usize = ((instr & 0x0F00) >> 8) as usize;
-            chip.registers[reg_idx] = (instr & 0x00FF) as u8;
+            // set register vx to nn
+            chip.registers[x] = nn;
         }
         0x7000 => {
             // register ops 
-            let reg_idx: usize = ((instr & 0x0F00) >> 8) as usize;
-            chip.registers[reg_idx] += (instr & 0x00FF) as u8;
+            chip.registers[x] = chip.registers[x].overflowing_add(get_nn(instr)).0;
+        }
+        0x8000 => {
+            // arithmetic
+            match n {
+                0 => {
+                    // set vx to vy 
+                    chip.registers[x] = chip.registers[y];
+                }
+                1 => {
+                    chip.registers[x] |= chip.registers[y];
+                }
+                2 => {
+                    chip.registers[x] &= chip.registers[y];
+                }
+                3 => {
+                    chip.registers[x] ^= chip.registers[y];
+                }
+                4 => {
+                    let sum: u16 = chip.registers[x] as u16 + chip.registers[y] as u16;
+                    chip.registers[x] = (sum & 0x00FF) as u8; // only last 8 bits
+                    chip.registers[0xF] = if sum > 255 {1} else {0}; // check for overflow;
+                }
+                5 | 7 => {
+                    let (left, right): (u8, u8) = match n {
+                        5 => (chip.registers[x], chip.registers[y]),
+                        7 => (chip.registers[y], chip.registers[x]),
+                        _ => panic!("Invalid value of n: {}", n),
+                    };
+                    let (diff, underflow) = left.overflowing_sub(right);
+                    chip.registers[x] = diff;
+                    chip.registers[0xF] = if underflow {0} else {1};
+                }
+                6 | 0xE => {
+                    let (new_val, flag_set) = match n {
+                        6 =>   (chip.registers[y] >> 1, chip.registers[y] & 0x1),
+                        0xE => (chip.registers[y] << 1, (chip.registers[y] & 0x1 << 7) >> 7),
+                        _ => panic!("Invalid value of n: {}", n),
+                    };
+                    chip.registers[x] = new_val;
+                    chip.registers[0xF] = flag_set; 
+                }
+                _ => ()
+                    
+            }
+        }
+        0x9000 => {
+            // set register vx 
+            let vx = chip.registers[x];
+            let vy = chip.registers[y];
+            if vx != vy { chip.pc += 2; }
         }
         0xa000 => {
             // set index register
-            chip.ir = instr & 0x0FFF;
+            chip.ir = nnn;
         }
         0xd000 => {
             // display to screen
-            let x: usize = ((instr & 0x0F00) >> 8) as usize;
-            let y: usize = ((instr & 0x00F0) >> 4) as usize;
-            let sprite_height = instr & 0x000F;
+            let sprite_height = n as u16;
             let vx = (chip.registers[x] as usize) & 63; // modulo
             let vy = (chip.registers[y] as usize) & 31;
             let mut collide_flag: u8 = 0;
@@ -152,6 +246,9 @@ fn emulate_cycle(chip: &mut Chip8) {
             }
 
             chip.registers[0xF] = collide_flag;
+        }
+        0xf000 => {
+            // not yet
         }
         _ =>  { 
             panic!("Encountered an unknown code {:#x}", opcode);
@@ -227,5 +324,71 @@ mod tests {
         let file_path = "programs/test_opcode.ch8";
         let chip = Chip8::init(file_path);
         assert_eq!(chip.memory[FONT_START_ADDR..FONT_END_ADDR], FONTS[..]);
+    } 
+
+    #[test]
+    fn lsb_shift_works_8xy6_shiftbit0() {
+        let file_path = "programs/test_opcode.ch8";
+        let mut chip = Chip8::init(file_path);
+        chip.pc = 0;
+        chip.registers[2] = 1; 
+        chip.memory[0] = 0x81; // x = 1
+        chip.memory[1] = 0x26; // y = 2
+        emulate_cycle(&mut chip);
+        assert_eq!(chip.registers[1], chip.registers[2] >> 1);
+        assert_eq!(chip.registers[0xF], 1);
+    } 
+
+    #[test]
+    fn lsb_shift_works_8xy6_shiftbit1() {
+        let file_path = "programs/test_opcode.ch8";
+        let mut chip = Chip8::init(file_path);
+        chip.pc = 0;
+        chip.registers[2] = 4; 
+        chip.memory[0] = 0x81; // x = 1
+        chip.memory[1] = 0x26; // y = 2
+        emulate_cycle(&mut chip);
+        assert_eq!(chip.registers[1], chip.registers[2] >> 1);
+        assert_eq!(chip.registers[0xF], 0);
+    } 
+
+    #[test]
+    fn msb_shift_works_8xye_shiftbit0() {
+        let file_path = "programs/test_opcode.ch8";
+        let mut chip = Chip8::init(file_path);
+        chip.pc = 0;
+        chip.registers[2] = 1; 
+        chip.memory[0] = 0x81; // x = 1
+        chip.memory[1] = 0x2E; // y = 2
+        emulate_cycle(&mut chip);
+        assert_eq!(chip.registers[1], chip.registers[2] << 1);
+        assert_eq!(chip.registers[0xF], 0);
+    } 
+
+    #[test]
+    fn msb_shift_works_8xye_shiftbit1() {
+        let file_path = "programs/test_opcode.ch8";
+        let mut chip = Chip8::init(file_path);
+        chip.pc = 0;
+        chip.registers[2] = 255; // 0b10000000
+        chip.memory[0] = 0x81; // x = 1
+        chip.memory[1] = 0x2E; // y = 2
+        emulate_cycle(&mut chip);
+        assert_eq!(chip.registers[1], chip.registers[2] << 1);
+        assert_eq!(chip.registers[0xF], 1);
+    } 
+
+    #[test]
+    fn subtract_underflow() {
+        let file_path = "programs/test_opcode.ch8";
+        let mut chip = Chip8::init(file_path);
+        chip.pc = 0;
+        chip.registers[1] = 0x08;  // register x
+        chip.registers[2] = 0x20;  // register y
+        chip.memory[0] = 0x81; // x = 1
+        chip.memory[1] = 0x25; // y = 2
+        emulate_cycle(&mut chip);
+        assert_eq!(chip.registers[1], 0xe8);
+        assert_eq!(chip.registers[0xF], 0);
     } 
 }
