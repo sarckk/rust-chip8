@@ -5,8 +5,9 @@ use std::env;
 use std::io::Read;
 use std::io::BufReader;
 use std::fs::File;
-use std::time::Instant;
+use std::{thread, time};
 use minifb::{Key, KeyRepeat, Window, WindowOptions};
+use rand::Rng;
 
 const START_ADDR: usize = 0x200;
 const FONT_START_ADDR: usize = 0x50; 
@@ -68,6 +69,16 @@ impl Chip8 {
         load_fonts(&mut chip8);
 
         chip8
+    }
+
+    fn decrement_timers(&mut self) {
+        if self.delay_t > 0 {
+            self.delay_t -= 1;
+        }
+
+        if self.sound_t > 0 {
+            self.sound_t -= 1;
+        }
     }
 
     fn reset_keys(&mut self) {
@@ -153,7 +164,6 @@ impl Chip8 {
                 if vx != nn { self.pc += 2; }
             }
             0x5000 => {
-                // skip if neq
                 let vx = self.registers[x];
                 let vy = self.registers[y];
                 if vx == vy { self.pc += 2; }
@@ -200,7 +210,7 @@ impl Chip8 {
                     6 | 0xE => {
                         let (new_val, flag_set) = match n {
                             6 =>   (self.registers[y] >> 1, self.registers[y] & 0x1),
-                            0xE => (self.registers[y] << 1, (self.registers[y] & 0x1 << 7) >> 7),
+                            0xE => (self.registers[y] << 1, (self.registers[y] >> 7) & 0x1),
                             _ => unreachable!(),
                         };
                         self.registers[x] = new_val;
@@ -211,7 +221,6 @@ impl Chip8 {
                 }
             }
             0x9000 => {
-                // set register vx 
                 let vx = self.registers[x];
                 let vy = self.registers[y];
                 if vx != vy { self.pc += 2; }
@@ -219,6 +228,15 @@ impl Chip8 {
             0xA000 => {
                 // set index register
                 self.ir = nnn;
+            }
+            0xB000 => {
+                // jmp w/ offset (following impl of COSMAC VIP interpreter)
+                // TODO: support toggle to behavior where self.registers[x] is used
+                self.pc = nnn + self.registers[0] as u16;
+            }
+            0xC000 => {
+                // random num AND -> vx
+                self.registers[x] = nn & rand::thread_rng().gen_range(0..=255);
             }
             0xD000 => {
                 // display to screen
@@ -248,6 +266,18 @@ impl Chip8 {
                 }
 
                 self.registers[0xF] = collide_flag;
+            }
+            0xE000 => {
+                // skip if key press
+                let skip_if = match nn {
+                    0x9E => 1,
+                    0xA1 => 0,
+                    _ => unreachable!()
+                };
+
+                if (self.keys & 1 << self.registers[x]) == skip_if {
+                    self.pc += 2;
+                }
             }
             0xF000 => {
                 match nn {
@@ -302,7 +332,7 @@ impl Chip8 {
                     _ => { unreachable!(); }
                 }
             }
-            _ =>  { unreachable!(); }
+            _ =>  { panic!("Unknown code {:#x}", opcode); }
         }
     }
 }
@@ -372,8 +402,12 @@ fn main() {
 
     window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
 
+    let mut cycles_elapsed_since_timer = 0;
+
     // start fetching
     while window.is_open() && !window.is_key_down(Key::Escape) {
+        cycles_elapsed_since_timer += 1;
+
         chip.register_keypresses(
             window.get_keys_pressed(KeyRepeat::Yes)
         );
@@ -392,11 +426,21 @@ fn main() {
             }
         }
 
+        if cycles_elapsed_since_timer == 8 {
+            // enforce ~62.5Hz timer updates 
+            chip.decrement_timers();
+            cycles_elapsed_since_timer = 0;
+        }
+
         chip.reset_keys();
 
         window
             .update_with_buffer(&buffer, win_width, win_height)
             .unwrap();
+        
+        // enforce ~500 for main loop
+        // 500Hz -> 1/500s per cycle -> execute every 2ms
+        thread::sleep(time::Duration::from_millis(2));
     }
 }
 
