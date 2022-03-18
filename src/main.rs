@@ -5,7 +5,8 @@ use std::env;
 use std::io::Read;
 use std::io::BufReader;
 use std::fs::File;
-use minifb::{Key, Window, WindowOptions};
+use std::time::Instant;
+use minifb::{Key, KeyRepeat, Window, WindowOptions};
 
 const START_ADDR: usize = 0x200;
 const FONT_START_ADDR: usize = 0x50; 
@@ -46,6 +47,7 @@ pub struct Chip8 {
     sound_t: u8,            // sound timer
     display: [u8; DISPLAY_WIDTH*DISPLAY_HEIGHT], // display graphics
     registers: [u8; NUM_REGISTERS],   // 16 general-purpose registers
+    keys: u16 // bit field of which keys were pressed
 }
 
 impl Chip8 {
@@ -59,12 +61,249 @@ impl Chip8 {
             sound_t: 0,
             display: [0; DISPLAY_WIDTH*DISPLAY_HEIGHT],
             registers: [0; NUM_REGISTERS],
+            keys: 0,
         };
 
         load_program(&mut chip8, file_path);
         load_fonts(&mut chip8);
 
         chip8
+    }
+
+    fn reset_keys(&mut self) {
+        self.keys = 0;
+    }
+
+    fn register_keypresses(&mut self, keys: Vec<Key>) {
+        self.keys = keys.iter().map(|key| {
+            let exponent = match key {
+                Key::Key1 => Some(0x1),
+                Key::Key2 => Some(0x2),
+                Key::Key3 => Some(0x3),
+                Key::Key4 => Some(0xC),
+                Key::Q =>    Some(0x4),
+                Key::W =>    Some(0x5),
+                Key::E =>    Some(0x6),
+                Key::R =>    Some(0xD),
+                Key::A =>    Some(0x7),
+                Key::S =>    Some(0x8),
+                Key::D =>    Some(0x9),
+                Key::F =>    Some(0xE),
+                Key::Z =>    Some(0xA),
+                Key::X =>    Some(0x0),
+                Key::C =>    Some(0xB),
+                Key::V =>    Some(0xF),
+                _ => None
+            };
+
+            if let Some(exp) = exponent {
+                return 1 << exp; 
+            } else {
+                return 0;
+            }
+        })
+        .sum::<u16>();
+    }
+
+    fn emulate_cycle(&mut self) {
+        let pc: usize = self.pc as usize;
+        let instr: u16 = (self.memory[pc] as u16) << 8 | self.memory[pc+1] as u16;  
+        // println!("{:#x}", instr);
+
+        let opcode: u16 = instr & 0xF000;
+        self.pc += 2;
+
+        let x = get_x(instr);
+        let y = get_y(instr);
+        let n = get_n(instr);
+        let nn = get_nn(instr);
+        let nnn = get_nnn(instr);
+
+        match opcode {
+            0x0 => { 
+                match instr & 0x0FFF {
+                    0x0E0 => {
+                        // clear display
+                        self.display.fill(0);
+                    }
+                    0x0EE => {
+                        // return from subroutine
+                        self.pc = self.stack.pop().unwrap();
+                    }
+                    _ => ()
+                }
+            }
+            0x1000 => {
+                // jump
+                self.pc = nnn;
+            }
+            0x2000 => {
+                // subroutine call
+                self.stack.push(self.pc);
+                self.pc = nnn;
+            }
+            0x3000 => {
+                // skip if eq
+                let vx = self.registers[x];
+                if vx == nn { self.pc += 2; }
+            }
+            0x4000 => {
+                // skip if neq
+                let vx = self.registers[x];
+                if vx != nn { self.pc += 2; }
+            }
+            0x5000 => {
+                // skip if neq
+                let vx = self.registers[x];
+                let vy = self.registers[y];
+                if vx == vy { self.pc += 2; }
+            }
+            0x6000 => {
+                // set register vx to nn
+                self.registers[x] = nn;
+            }
+            0x7000 => {
+                // register ops 
+                self.registers[x] = self.registers[x].overflowing_add(get_nn(instr)).0;
+            }
+            0x8000 => {
+                // arithmetic
+                match n {
+                    0 => {
+                        // set vx to vy 
+                        self.registers[x] = self.registers[y];
+                    }
+                    1 => {
+                        self.registers[x] |= self.registers[y];
+                    }
+                    2 => {
+                        self.registers[x] &= self.registers[y];
+                    }
+                    3 => {
+                        self.registers[x] ^= self.registers[y];
+                    }
+                    4 => {
+                        let sum: u16 = self.registers[x] as u16 + self.registers[y] as u16;
+                        self.registers[x] = (sum & 0x00FF) as u8; // only last 8 bits
+                        self.registers[0xF] = if sum > 255 {1} else {0}; // check for overflow;
+                    }
+                    5 | 7 => {
+                        let (left, right): (u8, u8) = match n {
+                            5 => (self.registers[x], self.registers[y]),
+                            7 => (self.registers[y], self.registers[x]),
+                            _ => unreachable!(),
+                        };
+                        let (diff, underflow) = left.overflowing_sub(right);
+                        self.registers[x] = diff;
+                        self.registers[0xF] = if underflow {0} else {1};
+                    }
+                    6 | 0xE => {
+                        let (new_val, flag_set) = match n {
+                            6 =>   (self.registers[y] >> 1, self.registers[y] & 0x1),
+                            0xE => (self.registers[y] << 1, (self.registers[y] & 0x1 << 7) >> 7),
+                            _ => unreachable!(),
+                        };
+                        self.registers[x] = new_val;
+                        self.registers[0xF] = flag_set; 
+                    }
+                    _ => ()
+                        
+                }
+            }
+            0x9000 => {
+                // set register vx 
+                let vx = self.registers[x];
+                let vy = self.registers[y];
+                if vx != vy { self.pc += 2; }
+            }
+            0xA000 => {
+                // set index register
+                self.ir = nnn;
+            }
+            0xD000 => {
+                // display to screen
+                let sprite_height = n as u16;
+                let vx = (self.registers[x] as usize) & 63; // modulo
+                let vy = (self.registers[y] as usize) & 31;
+                let mut collide_flag: u8 = 0;
+
+                for row in 0..sprite_height {
+                    if vy + row as usize == DISPLAY_HEIGHT as usize {
+                        break;
+                    }
+
+                    let mut sprite: u8 = self.memory[(self.ir + row) as usize];
+                    for col in (0..8).rev() {
+                        if vx + col == DISPLAY_WIDTH {
+                            break;
+                        }
+
+                        let i = DISPLAY_WIDTH * (vy + row as usize) + (vx + col as usize);
+                        if (self.display[i] == 0x1) && (sprite & 0x1) == 0x1 {
+                            collide_flag = 1;
+                        }
+                        self.display[i] |= sprite & 0x1; 
+                        sprite >>= 1;
+                    }
+                }
+
+                self.registers[0xF] = collide_flag;
+            }
+            0xF000 => {
+                match nn {
+                    0x07 => {
+                        self.registers[x] = self.delay_t;
+                    }
+                    0x15 => {
+                        self.delay_t = self.registers[x];
+                    }
+                    0x18 => {
+                        self.sound_t = self.registers[x];
+                    }
+                    0x1E => {
+                        // TODO: Spaceflight 209! relies on overflow to cause VF=1
+                        self.ir += self.registers[x] as u16; 
+                    }
+                    0x0A => {
+                        if self.keys == 0{
+                            // no keys are being pressed in this cycle, block
+                            self.pc -= 2; 
+                        } else {
+                            // at least 1 key pressed
+                            let mut i: u8 = 0;
+                            let mut val = self.keys;
+                            while val > 0 {
+                                if (val & 0x1) == 1 { break; }
+                                val >>= 1;
+                                i += 1;
+                            }
+                            self.registers[x] = i;
+                        }
+                    }
+                    0x29 => {
+                        // point to font character
+                        self.ir = FONT_START_ADDR as u16 + (FONT_HEIGHT * self.registers[x]) as u16;
+                    }
+                    0x33 => {
+                        // binary coded decimal conv
+                        let digit: u8 = self.registers[x];
+                        self.memory[(self.ir) as usize] = (digit / 100) % 10;
+                        self.memory[(self.ir+1) as usize] = (digit / 10) % 10;
+                        self.memory[(self.ir+2) as usize] = digit  % 10;
+                    }
+                    0x55 => {
+                        let i = self.ir as usize;
+                        self.memory[i..=i+x as usize].copy_from_slice(&self.registers[0..=x as usize]);
+                    }
+                    0x65 => {
+                        let i = self.ir as usize;
+                        self.registers[0..=x as usize].copy_from_slice(&self.memory[i..=i+x as usize]);
+                    }
+                    _ => { unreachable!(); }
+                }
+            }
+            _ =>  { unreachable!(); }
+        }
     }
 }
 
@@ -104,200 +343,6 @@ fn get_nnn(instr: u16) -> u16 {
     instr & 0x0FFF
 }
 
-fn emulate_cycle(chip: &mut Chip8) {
-    let pc: usize = chip.pc as usize;
-    let instr: u16 = (chip.memory[pc] as u16) << 8 | chip.memory[pc+1] as u16;  
-    // println!("{:#x}", instr);
-
-    let opcode: u16 = instr & 0xF000;
-    chip.pc += 2;
-
-    let x = get_x(instr);
-    let y = get_y(instr);
-    let n = get_n(instr);
-    let nn = get_nn(instr);
-    let nnn = get_nnn(instr);
-
-    match opcode {
-        0x0 => { 
-            match instr & 0x0FFF {
-                0x0E0 => {
-                    // clear display
-                    chip.display.fill(0);
-                }
-                0x0EE => {
-                    // return from subroutine
-                    chip.pc = chip.stack.pop().unwrap();
-                }
-                _ => ()
-            }
-        }
-        0x1000 => {
-            // jump
-            chip.pc = nnn;
-        }
-        0x2000 => {
-            // subroutine call
-            chip.stack.push(chip.pc);
-            chip.pc = nnn;
-        }
-        0x3000 => {
-            // skip if eq
-            let vx = chip.registers[x];
-            if vx == nn { chip.pc += 2; }
-        }
-        0x4000 => {
-            // skip if neq
-            let vx = chip.registers[x];
-            if vx != nn { chip.pc += 2; }
-        }
-        0x5000 => {
-            // skip if neq
-            let vx = chip.registers[x];
-            let vy = chip.registers[y];
-            if vx == vy { chip.pc += 2; }
-        }
-        0x6000 => {
-            // set register vx to nn
-            chip.registers[x] = nn;
-        }
-        0x7000 => {
-            // register ops 
-            chip.registers[x] = chip.registers[x].overflowing_add(get_nn(instr)).0;
-        }
-        0x8000 => {
-            // arithmetic
-            match n {
-                0 => {
-                    // set vx to vy 
-                    chip.registers[x] = chip.registers[y];
-                }
-                1 => {
-                    chip.registers[x] |= chip.registers[y];
-                }
-                2 => {
-                    chip.registers[x] &= chip.registers[y];
-                }
-                3 => {
-                    chip.registers[x] ^= chip.registers[y];
-                }
-                4 => {
-                    let sum: u16 = chip.registers[x] as u16 + chip.registers[y] as u16;
-                    chip.registers[x] = (sum & 0x00FF) as u8; // only last 8 bits
-                    chip.registers[0xF] = if sum > 255 {1} else {0}; // check for overflow;
-                }
-                5 | 7 => {
-                    let (left, right): (u8, u8) = match n {
-                        5 => (chip.registers[x], chip.registers[y]),
-                        7 => (chip.registers[y], chip.registers[x]),
-                        _ => unreachable!(),
-                    };
-                    let (diff, underflow) = left.overflowing_sub(right);
-                    chip.registers[x] = diff;
-                    chip.registers[0xF] = if underflow {0} else {1};
-                }
-                6 | 0xE => {
-                    let (new_val, flag_set) = match n {
-                        6 =>   (chip.registers[y] >> 1, chip.registers[y] & 0x1),
-                        0xE => (chip.registers[y] << 1, (chip.registers[y] & 0x1 << 7) >> 7),
-                        _ => unreachable!(),
-                    };
-                    chip.registers[x] = new_val;
-                    chip.registers[0xF] = flag_set; 
-                }
-                _ => ()
-                    
-            }
-        }
-        0x9000 => {
-            // set register vx 
-            let vx = chip.registers[x];
-            let vy = chip.registers[y];
-            if vx != vy { chip.pc += 2; }
-        }
-        0xA000 => {
-            // set index register
-            chip.ir = nnn;
-        }
-        0xD000 => {
-            // display to screen
-            let sprite_height = n as u16;
-            let vx = (chip.registers[x] as usize) & 63; // modulo
-            let vy = (chip.registers[y] as usize) & 31;
-            let mut collide_flag: u8 = 0;
-
-            for row in 0..sprite_height {
-                if vy + row as usize == DISPLAY_HEIGHT as usize {
-                    break;
-                }
-
-                let mut sprite: u8 = chip.memory[(chip.ir + row) as usize];
-                for col in (0..8).rev() {
-                    if vx + col == DISPLAY_WIDTH {
-                        break;
-                    }
-
-                    let i = DISPLAY_WIDTH * (vy + row as usize) + (vx + col as usize);
-                    if (chip.display[i] == 0x1) && (sprite & 0x1) == 0x1 {
-                        collide_flag = 1;
-                    }
-                    chip.display[i] |= sprite & 0x1; 
-                    sprite >>= 1;
-                }
-            }
-
-            chip.registers[0xF] = collide_flag;
-        }
-        0xF000 => {
-            match nn {
-                0x07 => {
-                    chip.registers[x] = chip.delay_t;
-                }
-                0x15 => {
-                    chip.delay_t = chip.registers[x];
-                }
-                0x18 => {
-                    chip.sound_t = chip.registers[x];
-                }
-                0x1E => {
-                    // TODO: Spaceflight 209! relies on overflow to cause VF=1
-                    chip.ir += chip.registers[x] as u16; 
-                }
-                0x0A => {
-                    /*
-                    if key not pressed {
-                        chip.pc -= 2; // blocking execution from continuing
-                    } else {
-                        // key pressed
-                        chip.registers[x] = hex value of key input
-                    }
-                    */
-                }
-                0x29 => {
-                    // point to font character
-                    chip.ir = FONT_START_ADDR as u16 + (FONT_HEIGHT * chip.registers[x]) as u16;
-                }
-                0x33 => {
-                    // binary coded decimal conv
-                    let digit: u8 = chip.registers[x];
-                    chip.memory[(chip.ir) as usize] = (digit / 100) % 10;
-                    chip.memory[(chip.ir+1) as usize] = (digit / 10) % 10;
-                    chip.memory[(chip.ir+2) as usize] = digit  % 10;
-                }
-                0x55 => {
-                    let i = chip.ir as usize;
-                    chip.memory[i..=i+x as usize].copy_from_slice(&chip.registers[0..=x as usize]);
-                }
-                0x65 => {
-                    let i = chip.ir as usize;
-                    chip.registers[0..=x as usize].copy_from_slice(&chip.memory[i..=i+x as usize]);
-                }
-                _ => { unreachable!(); }
-            }
-        }
-        _ =>  { unreachable!(); }
-    }
-}
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -329,7 +374,11 @@ fn main() {
 
     // start fetching
     while window.is_open() && !window.is_key_down(Key::Escape) {
-        emulate_cycle(&mut chip);
+        chip.register_keypresses(
+            window.get_keys_pressed(KeyRepeat::Yes)
+        );
+
+        chip.emulate_cycle();
 
         for (i, px) in chip.display.into_iter().enumerate() {
             // px is u8, either 0x1 or 0x0
@@ -342,6 +391,8 @@ fn main() {
                     .fill(if px == 0 {0} else {ON_PIXEL});
             }
         }
+
+        chip.reset_keys();
 
         window
             .update_with_buffer(&buffer, win_width, win_height)
@@ -377,7 +428,7 @@ mod tests {
         chip.registers[2] = 1; 
         chip.memory[0] = 0x81; // x = 1
         chip.memory[1] = 0x26; // y = 2
-        emulate_cycle(&mut chip);
+        chip.emulate_cycle();
         assert_eq!(chip.registers[1], chip.registers[2] >> 1);
         assert_eq!(chip.registers[0xF], 1);
     } 
@@ -390,7 +441,7 @@ mod tests {
         chip.registers[2] = 4; 
         chip.memory[0] = 0x81; // x = 1
         chip.memory[1] = 0x26; // y = 2
-        emulate_cycle(&mut chip);
+        chip.emulate_cycle();
         assert_eq!(chip.registers[1], chip.registers[2] >> 1);
         assert_eq!(chip.registers[0xF], 0);
     } 
@@ -403,7 +454,7 @@ mod tests {
         chip.registers[2] = 1; 
         chip.memory[0] = 0x81; // x = 1
         chip.memory[1] = 0x2E; // y = 2
-        emulate_cycle(&mut chip);
+        chip.emulate_cycle();
         assert_eq!(chip.registers[1], chip.registers[2] << 1);
         assert_eq!(chip.registers[0xF], 0);
     } 
@@ -416,7 +467,7 @@ mod tests {
         chip.registers[2] = 255; // 0b10000000
         chip.memory[0] = 0x81; // x = 1
         chip.memory[1] = 0x2E; // y = 2
-        emulate_cycle(&mut chip);
+        chip.emulate_cycle();
         assert_eq!(chip.registers[1], chip.registers[2] << 1);
         assert_eq!(chip.registers[0xF], 1);
     } 
@@ -430,8 +481,16 @@ mod tests {
         chip.registers[2] = 0x20;  // register y
         chip.memory[0] = 0x81; // x = 1
         chip.memory[1] = 0x25; // y = 2
-        emulate_cycle(&mut chip);
+        chip.emulate_cycle();
         assert_eq!(chip.registers[1], 0xe8);
         assert_eq!(chip.registers[0xF], 0);
+    } 
+
+    #[test]
+    fn keypress_detected() {
+        let file_path = "programs/test_opcode.ch8";
+        let mut chip = Chip8::init(file_path);
+        chip.register_keypresses(vec![Key::Key1, Key::W, Key::Q, Key::V]);
+        assert_eq!(chip.keys, 0b1000000000110010);
     } 
 }
