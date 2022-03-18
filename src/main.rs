@@ -16,8 +16,9 @@ const DISPLAY_HEIGHT: usize = 32;
 const PX_SCALING: usize = 10;  // pixel scaling factor
 const NUM_REGISTERS: usize = 16; 
 const ON_PIXEL: u32 = 0x00FFFFFF; // white pixel
+const FONT_HEIGHT: u8 = 5; // height (in pixels) that each digit of font occupies
 
-static FONTS: [u8; 5*16] = [
+static FONTS: [u8; 16 * FONT_HEIGHT as usize] = [
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
     0x20, 0x60, 0x20, 0x20, 0x70, // 1
     0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
@@ -189,7 +190,7 @@ fn emulate_cycle(chip: &mut Chip8) {
                     let (left, right): (u8, u8) = match n {
                         5 => (chip.registers[x], chip.registers[y]),
                         7 => (chip.registers[y], chip.registers[x]),
-                        _ => panic!("Invalid value of n: {}", n),
+                        _ => unreachable!(),
                     };
                     let (diff, underflow) = left.overflowing_sub(right);
                     chip.registers[x] = diff;
@@ -199,7 +200,7 @@ fn emulate_cycle(chip: &mut Chip8) {
                     let (new_val, flag_set) = match n {
                         6 =>   (chip.registers[y] >> 1, chip.registers[y] & 0x1),
                         0xE => (chip.registers[y] << 1, (chip.registers[y] & 0x1 << 7) >> 7),
-                        _ => panic!("Invalid value of n: {}", n),
+                        _ => unreachable!(),
                     };
                     chip.registers[x] = new_val;
                     chip.registers[0xF] = flag_set; 
@@ -214,11 +215,11 @@ fn emulate_cycle(chip: &mut Chip8) {
             let vy = chip.registers[y];
             if vx != vy { chip.pc += 2; }
         }
-        0xa000 => {
+        0xA000 => {
             // set index register
             chip.ir = nnn;
         }
-        0xd000 => {
+        0xD000 => {
             // display to screen
             let sprite_height = n as u16;
             let vx = (chip.registers[x] as usize) & 63; // modulo
@@ -247,12 +248,54 @@ fn emulate_cycle(chip: &mut Chip8) {
 
             chip.registers[0xF] = collide_flag;
         }
-        0xf000 => {
-            // not yet
+        0xF000 => {
+            match nn {
+                0x07 => {
+                    chip.registers[x] = chip.delay_t;
+                }
+                0x15 => {
+                    chip.delay_t = chip.registers[x];
+                }
+                0x18 => {
+                    chip.sound_t = chip.registers[x];
+                }
+                0x1E => {
+                    // TODO: Spaceflight 209! relies on overflow to cause VF=1
+                    chip.ir += chip.registers[x] as u16; 
+                }
+                0x0A => {
+                    /*
+                    if key not pressed {
+                        chip.pc -= 2; // blocking execution from continuing
+                    } else {
+                        // key pressed
+                        chip.registers[x] = hex value of key input
+                    }
+                    */
+                }
+                0x29 => {
+                    // point to font character
+                    chip.ir = FONT_START_ADDR as u16 + (FONT_HEIGHT * chip.registers[x]) as u16;
+                }
+                0x33 => {
+                    // binary coded decimal conv
+                    let digit: u8 = chip.registers[x];
+                    chip.memory[(chip.ir) as usize] = (digit / 100) % 10;
+                    chip.memory[(chip.ir+1) as usize] = (digit / 10) % 10;
+                    chip.memory[(chip.ir+2) as usize] = digit  % 10;
+                }
+                0x55 => {
+                    let i = chip.ir as usize;
+                    chip.memory[i..=i+x as usize].copy_from_slice(&chip.registers[0..=x as usize]);
+                }
+                0x65 => {
+                    let i = chip.ir as usize;
+                    chip.registers[0..=x as usize].copy_from_slice(&chip.memory[i..=i+x as usize]);
+                }
+                _ => { unreachable!(); }
+            }
         }
-        _ =>  { 
-            panic!("Encountered an unknown code {:#x}", opcode);
-        }
+        _ =>  { unreachable!(); }
     }
 }
 
