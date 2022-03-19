@@ -2,9 +2,14 @@ extern crate minifb;
 
 use std::process;
 use std::env;
+use std::io;
+use std::io::Write;
 use std::io::Read;
 use std::io::BufReader;
 use std::fs::File;
+use std::collections::HashSet;
+use std::fmt::LowerHex;
+use num::Integer;
 use std::{thread, time};
 use minifb::{Key, KeyRepeat, Window, WindowOptions};
 use rand::Rng;
@@ -81,6 +86,10 @@ impl Chip8 {
         }
     }
 
+    fn get_instr(&self) -> u16 {
+        (self.memory[self.pc as usize] as u16) << 8 | self.memory[self.pc as usize+1] as u16
+    }
+
     fn reset_keys(&mut self) {
         self.keys = 0;
     }
@@ -117,8 +126,7 @@ impl Chip8 {
     }
 
     fn emulate_cycle(&mut self) {
-        let pc: usize = self.pc as usize;
-        let instr: u16 = (self.memory[pc] as u16) << 8 | self.memory[pc+1] as u16;  
+        let instr = self.get_instr();
         // println!("{:#x}", instr);
 
         let opcode: u16 = instr & 0xF000;
@@ -373,6 +381,22 @@ fn get_nnn(instr: u16) -> u16 {
     instr & 0x0FFF
 }
 
+#[inline]
+fn print_line_debug<T: Integer + LowerHex>(name: &str, value: T) {
+    println!("{:<5}  {:#x}", format!("{}:", name), value);
+}
+
+fn print_lines_debug(chip: &Chip8) {
+    print_line_debug("PC", chip.pc);
+    print_line_debug("I", chip.ir);
+    println!();
+    for i in 0..=0xf {
+        print_line_debug(format!("V{i}").as_ref(), chip.registers[i]);
+    }
+    println!();
+    print_line_debug("ST", chip.sound_t);
+    print_line_debug("DT", chip.delay_t);
+}
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -382,6 +406,20 @@ fn main() {
         eprintln!("Error: Missing path to CHIP-8 program to emulate");
         eprintln!("USAGE: cargo run <file_path>");
         process::exit(1);
+    }
+
+    let mut debug = false;
+
+    if args.len() == 3 && args[2] == "-d" {
+        // enter debug mode
+        debug = true;
+
+        println!("Starting program in debug mode...");
+        println!("USAGE: ");
+        println!("  r        - run until next checkpoint");
+        println!("  b <addr> - add breakpoint at address <addr>");
+        println!("  ni       - execute next instruction");
+        println!("  p        - print current state of CHIP-8");
     }
 
     let file_path = &args[1];
@@ -404,8 +442,72 @@ fn main() {
 
     let mut cycles_elapsed_since_timer = 0;
 
+    // debugging stuff
+    let mut breakpoints: HashSet<u16> = HashSet::new();
+
     // start fetching
     while window.is_open() && !window.is_key_down(Key::Escape) {
+        
+        // check if current pc is in breakpoints to pause at
+        if breakpoints.contains(&chip.pc) {
+            println!("Hit a breakpoint at {:#x}", chip.pc);
+            debug = true;
+        }
+
+        if debug {
+            let stdin = io::stdin(); 
+            let input = &mut String::new();
+
+            loop {
+                print!(">> ");
+                let _ = io::stdout().flush();
+                input.clear();
+                let _ = stdin.read_line(input); // blocks
+                let commands: Vec<&str> = input.split_whitespace().collect();
+
+                match commands[0] {
+                    "r" =>  {
+                        // run until we hit a breakpoint, or run until end
+                        debug = false;
+                        break;
+                    }
+                    "b" => {
+                        let breakpoint: u16;
+
+                        if commands.len() == 1 {
+                            eprintln!("No breakpoint specified.");
+                            eprintln!("Usage: b <address>");
+                        }
+
+                        match u16::from_str_radix(commands[1], 16) {
+                            Ok(addr) => {
+                                breakpoint = addr;
+                            }
+                            Err(_) => {
+                                eprintln!("Badly formatted hex address.");
+                                eprintln!("Enter a valid hex address without leading '0x'");
+                                continue;
+                            }
+                        }
+                        // set a breakpoint at <breakpoint> 
+                        println!("Setting break point at {:#x}", breakpoint);
+                        breakpoints.insert(breakpoint);
+                    }
+                    "p" => {
+                        // print debugging information
+                        print_lines_debug(&chip);
+                    }
+                    "ni" => {
+                        // next instruction
+                        println!("{:#x}\topcode={:#x}", chip.pc, chip.get_instr());
+                        break;
+                    }
+                    _ => { }
+                }
+            }
+        }
+
+
         cycles_elapsed_since_timer += 1;
 
         chip.register_keypresses(
