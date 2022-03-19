@@ -217,14 +217,14 @@ impl Chip8 {
                     }
                     6 | 0xE => {
                         let (new_val, flag_set) = match n {
-                            6 =>   (self.registers[y] >> 1, self.registers[y] & 0x1),
-                            0xE => (self.registers[y] << 1, (self.registers[y] >> 7) & 0x1),
+                            6 =>   (self.registers[x] >> 1, self.registers[x] & 0x1),
+                            0xE => (self.registers[x] << 1, (self.registers[x] >> 7) & 0x1),
                             _ => unreachable!(),
                         };
                         self.registers[x] = new_val;
                         self.registers[0xF] = flag_set; 
                     }
-                    _ => ()
+                    _ => unreachable!()
                         
                 }
             }
@@ -248,27 +248,24 @@ impl Chip8 {
             }
             0xD000 => {
                 // display to screen
-                let sprite_height = n as u16;
-                let vx = (self.registers[x] as usize) & 63; // modulo
-                let vy = (self.registers[y] as usize) & 31;
+                let sprite_height = n as usize;
+                let vx = self.registers[x] as usize; 
+                let vy = self.registers[y] as usize;
                 let mut collide_flag: u8 = 0;
 
                 for row in 0..sprite_height {
-                    if vy + row as usize == DISPLAY_HEIGHT as usize {
-                        break;
-                    }
 
-                    let mut sprite: u8 = self.memory[(self.ir + row) as usize];
+                    let mut sprite: u8 = self.memory[(self.ir + row as u16) as usize];
+
                     for col in (0..8).rev() {
-                        if vx + col == DISPLAY_WIDTH {
-                            break;
-                        }
+                        let vx_w = (vx + col) % DISPLAY_WIDTH; 
+                        let vy_w = (vy + row) % DISPLAY_HEIGHT;
 
-                        let i = DISPLAY_WIDTH * (vy + row as usize) + (vx + col as usize);
+                        let i = DISPLAY_WIDTH * (vy_w) + (vx_w);
                         if (self.display[i] == 0x1) && (sprite & 0x1) == 0x1 {
                             collide_flag = 1;
                         }
-                        self.display[i] |= sprite & 0x1; 
+                        self.display[i] ^= sprite & 0x1; 
                         sprite >>= 1;
                     }
                 }
@@ -292,18 +289,8 @@ impl Chip8 {
                     0x07 => {
                         self.registers[x] = self.delay_t;
                     }
-                    0x15 => {
-                        self.delay_t = self.registers[x];
-                    }
-                    0x18 => {
-                        self.sound_t = self.registers[x];
-                    }
-                    0x1E => {
-                        // TODO: Spaceflight 209! relies on overflow to cause VF=1
-                        self.ir += self.registers[x] as u16; 
-                    }
                     0x0A => {
-                        if self.keys == 0{
+                        if self.keys == 0 {
                             // no keys are being pressed in this cycle, block
                             self.pc -= 2; 
                         } else {
@@ -317,6 +304,16 @@ impl Chip8 {
                             }
                             self.registers[x] = i;
                         }
+                    }
+                    0x15 => {
+                        self.delay_t = self.registers[x];
+                    }
+                    0x18 => {
+                        self.sound_t = self.registers[x];
+                    }
+                    0x1E => {
+                        // TODO: Spaceflight 209! relies on overflow to cause VF=1
+                        self.ir += self.registers[x] as u16; 
                     }
                     0x29 => {
                         // point to font character
