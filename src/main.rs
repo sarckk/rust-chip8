@@ -10,7 +10,7 @@ use std::fs::File;
 use std::collections::HashSet;
 use std::fmt::LowerHex;
 use num::Integer;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use minifb::{Key, Window, WindowOptions};
 use rand::Rng;
 
@@ -391,6 +391,17 @@ fn print_line_debug<T: Integer + LowerHex>(name: &str, value: T) {
     println!("{:<5}  {:#x}", format!("{}:", name), value);
 }
 
+#[inline]
+fn print_debug_help() {
+    println!("USAGE: ");
+    println!("  r        - run until next checkpoint");
+    println!("  b <addr> - add breakpoint at address <addr>");
+    println!("  ni       - execute next instruction");
+    println!("  p        - print current state of CHIP-8");
+    println!("  help     - print list of commands available");
+}
+
+
 fn print_lines_debug(chip: &Chip8) {
     print_line_debug("PC", chip.pc);
     print_line_debug("I", chip.ir);
@@ -420,11 +431,7 @@ fn main() {
         debug = true;
 
         println!("Starting program in debug mode...");
-        println!("USAGE: ");
-        println!("  r        - run until next checkpoint");
-        println!("  b <addr> - add breakpoint at address <addr>");
-        println!("  ni       - execute next instruction");
-        println!("  p        - print current state of CHIP-8");
+        print_debug_help();
     }
 
     let file_path = &args[1];
@@ -443,8 +450,8 @@ fn main() {
         panic!("{}", e);
     });
 
-    window.limit_update_rate(None);
-    // window.limit_update_rate(Some(Duration::from_millis(1000/60)));
+    // 60fps
+    window.limit_update_rate(Some(Duration::from_millis(1000/60)));
 
     let cur_t = Instant::now();
     let mut finished_cycles = 0;
@@ -456,69 +463,77 @@ fn main() {
 
     // start fetching
     while window.is_open() && !window.is_key_down(Key::Escape) {
-        
-        // check if current pc is in breakpoints to pause at
-        if breakpoints.contains(&chip.pc) {
-            println!("Hit a breakpoint at {:#x}", chip.pc);
-            debug = true;
-        }
-
-        if debug {
-            let stdin = io::stdin(); 
-            let input = &mut String::new();
-
-            loop {
-                print!(">> ");
-                let _ = io::stdout().flush();
-                input.clear();
-                let _ = stdin.read_line(input); // blocks
-                let commands: Vec<&str> = input.split_whitespace().collect();
-
-                match commands[0] {
-                    "r" =>  {
-                        // run until we hit a breakpoint, or run until end
-                        debug = false;
-                        break;
-                    }
-                    "b" => {
-                        let breakpoint: u16;
-
-                        if commands.len() == 1 {
-                            eprintln!("No breakpoint specified.");
-                            eprintln!("Usage: b <address>");
-                        }
-
-                        match u16::from_str_radix(commands[1], 16) {
-                            Ok(addr) => {
-                                breakpoint = addr;
-                            }
-                            Err(_) => {
-                                eprintln!("Badly formatted hex address.");
-                                eprintln!("Enter a valid hex address without leading '0x'");
-                                continue;
-                            }
-                        }
-                        // set a breakpoint at <breakpoint> 
-                        println!("Setting break point at {:#x}", breakpoint);
-                        breakpoints.insert(breakpoint);
-                    }
-                    "p" => {
-                        // print debugging information
-                        print_lines_debug(&chip);
-                    }
-                    "ni" => {
-                        // next instruction
-                        println!("{:#x}\topcode={:#x}", chip.pc, chip.get_instr());
-                        break;
-                    }
-                    _ => { }
-                }
-            }
-        }
 
         let expected_cycles: u128 = cur_t.elapsed().as_millis() / (1000 / CPU_CYCLE_RATE); 
 
         for _ in 0..(expected_cycles - finished_cycles) {
+            // check if current pc is in breakpoints to pause at
+            if breakpoints.contains(&chip.pc) {
+                println!("Hit a breakpoint at {:#x}", chip.pc);
+                debug = true;
+            }
+
+            if debug {
+                let stdin = io::stdin(); 
+                let input = &mut String::new();
+
+                loop {
+                    print!(">> ");
+                    let _ = io::stdout().flush();
+                    input.clear();
+                    let _ = stdin.read_line(input); // blocks
+                    let commands: Vec<&str> = input.split_whitespace().collect();
+
+                    if commands.len() == 0 {
+                        print_debug_help();
+                        continue;
+                    }
+
+                    match commands[0] {
+                        "r" =>  {
+                            // run until we hit a breakpoint, or run until end
+                            debug = false;
+                            break;
+                        }
+                        "b" => {
+                            let breakpoint: u16;
+
+                            if commands.len() == 1 {
+                                eprintln!("No breakpoint specified.");
+                                eprintln!("Usage: b <address>");
+                            }
+
+                            match u16::from_str_radix(commands[1], 16) {
+                                Ok(addr) => {
+                                    breakpoint = addr;
+                                }
+                                Err(_) => {
+                                    eprintln!("Badly formatted hex address.");
+                                    eprintln!("Enter a valid hex address without leading '0x'");
+                                    continue;
+                                }
+                            }
+                            // set a breakpoint at <breakpoint> 
+                            println!("Setting break point at {:#x}", breakpoint);
+                            breakpoints.insert(breakpoint);
+                        }
+                        "p" => {
+                            // print debugging information
+                            print_lines_debug(&chip);
+                        }
+                        "ni" => {
+                            // next instruction
+                            println!("{:#x}\topcode={:#x}", chip.pc, chip.get_instr());
+                            break;
+                        }
+                        "help" => {
+                            print_debug_help();
+                        }
+                        _ => { }
+                    }
+                }
+            }
+
             chip.register_keypresses(window.get_keys());
 
             chip.emulate_cycle();
