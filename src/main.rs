@@ -10,8 +10,8 @@ use std::fs::File;
 use std::collections::HashSet;
 use std::fmt::LowerHex;
 use num::Integer;
-use std::{thread, time};
-use minifb::{Key, KeyRepeat, Window, WindowOptions};
+use std::time::Instant;
+use minifb::{Key, Window, WindowOptions};
 use rand::Rng;
 
 const START_ADDR: usize = 0x200;
@@ -53,7 +53,8 @@ pub struct Chip8 {
     sound_t: u8,            // sound timer
     display: [u8; DISPLAY_WIDTH*DISPLAY_HEIGHT], // display graphics
     registers: [u8; NUM_REGISTERS],   // 16 general-purpose registers
-    keys: u16 // bit field of which keys were pressed
+    keys: u16, // bit field of which keys were pressed
+    redraw: bool,
 }
 
 impl Chip8 {
@@ -68,6 +69,7 @@ impl Chip8 {
             display: [0; DISPLAY_WIDTH*DISPLAY_HEIGHT],
             registers: [0; NUM_REGISTERS],
             keys: 0,
+            redraw: false,
         };
 
         load_program(&mut chip8, file_path);
@@ -90,12 +92,9 @@ impl Chip8 {
         (self.memory[self.pc as usize] as u16) << 8 | self.memory[self.pc as usize+1] as u16
     }
 
-    fn reset_keys(&mut self) {
-        self.keys = 0;
-    }
-
     fn register_keypresses(&mut self, keys: Vec<Key>) {
-        self.keys = keys.iter().map(|key| {
+        self.keys = 0;
+        for key in keys.iter() {
             let exponent = match key {
                 Key::Key1 => Some(0x1),
                 Key::Key2 => Some(0x2),
@@ -115,14 +114,12 @@ impl Chip8 {
                 Key::V =>    Some(0xF),
                 _ => None
             };
-
+            
             if let Some(exp) = exponent {
-                return 1 << exp; 
-            } else {
-                return 0;
-            }
-        })
-        .sum::<u16>();
+                self.keys = 1 << exp;
+                break;
+            } 
+        }
     }
 
     fn emulate_cycle(&mut self) {
@@ -144,6 +141,7 @@ impl Chip8 {
                     0x0E0 => {
                         // clear display
                         self.display.fill(0);
+                        self.redraw = true;
                     }
                     0x0EE => {
                         // return from subroutine
@@ -269,6 +267,8 @@ impl Chip8 {
                         sprite >>= 1;
                     }
                 }
+
+                self.redraw = true;
 
                 self.registers[0xF] = collide_flag;
             }
@@ -435,9 +435,13 @@ fn main() {
         panic!("{}", e);
     });
 
-    window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
+    window.limit_update_rate(None);
+    // window.limit_update_rate(Some(Duration::from_millis(1000/60)));
 
-    let mut cycles_elapsed_since_timer = 0;
+    let cur_t = Instant::now();
+    let mut finished_cycles = 0;
+
+    let mut redraw = false;
 
     // debugging stuff
     let mut breakpoints: HashSet<u16> = HashSet::new();
@@ -504,42 +508,43 @@ fn main() {
             }
         }
 
+        let expected_cycles: u128 = cur_t.elapsed().as_millis() / (1000/500); 
 
-        cycles_elapsed_since_timer += 1;
+        for _ in 0..(expected_cycles - finished_cycles) {
+            chip.register_keypresses(window.get_keys());
 
-        chip.register_keypresses(
-            window.get_keys_pressed(KeyRepeat::Yes)
-        );
+            chip.emulate_cycle();
+            finished_cycles += 1;
 
-        chip.emulate_cycle();
-
-        for (i, px) in chip.display.into_iter().enumerate() {
-            // px is u8, either 0x1 or 0x0
-            let row = i / DISPLAY_WIDTH;
-            let col = i % DISPLAY_WIDTH;
-
-            for row_offset in 0..PX_SCALING  {
-                let buf_idx = row*win_width*PX_SCALING + col*PX_SCALING + row_offset*win_width;
-                buffer[buf_idx..buf_idx+PX_SCALING]
-                    .fill(if px == 0 {0} else {ON_PIXEL});
+            if chip.redraw {
+                redraw = true;
             }
         }
 
-        if cycles_elapsed_since_timer == 8 {
-            // enforce ~62.5Hz timer updates 
-            chip.decrement_timers();
-            cycles_elapsed_since_timer = 0;
+        // if instr_cycles > 0 {
+        //     cur_t = Instant::now();
+        // }
+
+        chip.decrement_timers();
+
+        if redraw {
+            for (i, px) in chip.display.into_iter().enumerate() {
+                // px is u8, either 0x1 or 0x0
+                let row = i / DISPLAY_WIDTH;
+                let col = i % DISPLAY_WIDTH;
+
+                for row_offset in 0..PX_SCALING  {
+                    let buf_idx = row*win_width*PX_SCALING + col*PX_SCALING + row_offset*win_width;
+                    buffer[buf_idx..buf_idx+PX_SCALING].fill(if px == 0 {0} else {ON_PIXEL});
+                }
+            }
+
+            window
+                .update_with_buffer(&buffer, win_width, win_height)
+                .unwrap();
+            
+            redraw = false;
         }
-
-        chip.reset_keys();
-
-        window
-            .update_with_buffer(&buffer, win_width, win_height)
-            .unwrap();
-        
-        // enforce ~500 for main loop
-        // 500Hz -> 1/500s per cycle -> execute every 2ms
-        thread::sleep(time::Duration::from_millis(2));
     }
 }
 
