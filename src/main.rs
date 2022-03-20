@@ -14,6 +14,8 @@ use std::time::Instant;
 use minifb::{Key, Window, WindowOptions};
 use rand::Rng;
 
+const CPU_CYCLE_RATE: u128 = 600;
+
 const START_ADDR: usize = 0x200;
 const FONT_START_ADDR: usize = 0x50; 
 const FONT_END_ADDR: usize = 0xA0; 
@@ -94,6 +96,7 @@ impl Chip8 {
 
     fn register_keypresses(&mut self, keys: Vec<Key>) {
         self.keys = 0;
+
         for key in keys.iter() {
             let exponent = match key {
                 Key::Key1 => Some(0x1),
@@ -114,6 +117,7 @@ impl Chip8 {
                 Key::V =>    Some(0xF),
                 _ => None
             };
+
             
             if let Some(exp) = exponent {
                 self.keys = 1 << exp;
@@ -274,14 +278,18 @@ impl Chip8 {
             }
             0xE000 => {
                 // skip if key press
-                let skip_if = match nn {
-                    0x9E => 1,
-                    0xA1 => 0,
+                match nn {
+                    0x9E =>  {
+                        if (self.keys & 1 << self.registers[x]) > 0 {
+                            self.pc += 2;
+                        }
+                    }
+                    0xA1 =>  {
+                        if (self.keys & 1 << self.registers[x]) == 0 {
+                            self.pc += 2;
+                        }
+                    }
                     _ => unreachable!()
-                };
-
-                if (self.keys & 1 << self.registers[x]) == skip_if {
-                    self.pc += 2;
                 }
             }
             0xF000 => {
@@ -508,7 +516,7 @@ fn main() {
             }
         }
 
-        let expected_cycles: u128 = cur_t.elapsed().as_millis() / (1000/500); 
+        let expected_cycles: u128 = cur_t.elapsed().as_millis() / (1000 / CPU_CYCLE_RATE); 
 
         for _ in 0..(expected_cycles - finished_cycles) {
             chip.register_keypresses(window.get_keys());
@@ -520,10 +528,6 @@ fn main() {
                 redraw = true;
             }
         }
-
-        // if instr_cycles > 0 {
-        //     cur_t = Instant::now();
-        // }
 
         chip.decrement_timers();
 

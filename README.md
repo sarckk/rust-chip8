@@ -10,7 +10,7 @@ cargo run <file_path>
 Currently, the `programs` directory contains some test ROMs:
 - `test_opcode.ch8` ([Source](https://github.com/corax89/chip8-test-rom))
 - `ibm_logo.ch8` ([Source](https://github.com/loktar00/chip8/blob/master/roms/IBM%20Logo.ch8))
-- `tetris.ch8` ([Source](https://github.com/dmatlack/chip8))
+- `tetris.ch8` and `space_invaders.ch8` ([Source](https://github.com/dmatlack/chip8))
 
 ### Running tests
 To execute tests for the emulator, run `cargo test`
