@@ -8,4 +8,5 @@ edition = "2021"
 [dependencies]
 minifb = "0.20"
 num = "0.4"
+rodio = "0.15"
 rand = "0.8"

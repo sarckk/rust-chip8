@@ -13,6 +13,7 @@ use num::Integer;
 use std::time::{Duration, Instant};
 use minifb::{Key, Window, WindowOptions};
 use rand::Rng;
+use rodio::{Sink, OutputStream, source::SineWave};
 
 const CPU_CYCLE_RATE: u128 = 600;
 
@@ -80,14 +81,17 @@ impl Chip8 {
         chip8
     }
 
-    fn decrement_timers(&mut self) {
+    fn decrement_timers(&mut self) -> bool {
         if self.delay_t > 0 {
             self.delay_t -= 1;
         }
 
         if self.sound_t > 0 {
             self.sound_t -= 1;
-        }
+            return true;
+        }  
+
+        false
     }
 
     fn get_instr(&self) -> u16 {
@@ -458,6 +462,11 @@ fn main() {
 
     let mut redraw = false;
 
+    let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+    let sink = Sink::try_new(&stream_handle).unwrap();
+    sink.append(SineWave::new(356.0)); // create a beep
+    sink.pause();
+
     // debugging stuff
     let mut breakpoints: HashSet<u16> = HashSet::new();
 
@@ -544,7 +553,12 @@ fn main() {
             }
         }
 
-        chip.decrement_timers();
+        let beep: bool = chip.decrement_timers();
+        if beep {
+            sink.play();
+        } else {
+            sink.pause();
+        }
 
         if redraw {
             for (i, px) in chip.display.into_iter().enumerate() {
