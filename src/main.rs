@@ -33,9 +33,7 @@ fn print_debug_help() {
 }
 
 
-pub fn map_keypress_bits(keys: Vec<Key>) ->  u16 {
-    let mut keybits: u16 = 0;
-
+pub fn get_first_key(keys: Vec<Key>) -> Option<u8> {
     for key in keys.iter() {
         let exponent = match key {
             Key::Key1 => Some(0x1),
@@ -59,12 +57,11 @@ pub fn map_keypress_bits(keys: Vec<Key>) ->  u16 {
 
         
         if let Some(exp) = exponent {
-            keybits = 1 << exp;
-            break;
+            return exp;
         } 
     }
 
-    keybits 
+    None
 }
 
 
@@ -201,9 +198,7 @@ fn main() {
                 }
             }
 
-            chip.keys.set_keys(
-                map_keypress_bits( window.get_keys() )
-            );
+            chip.register_keypress(get_first_key(window.get_keys()));
 
             chip.emulate_cycle();
             finished_cycles += 1;

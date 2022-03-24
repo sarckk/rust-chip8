@@ -55,7 +55,7 @@ fn get_nnn(instr: u16) -> u16 {
 
 
 pub struct VM {
-    pub memory: Memory, // 4kb RAM
+    memory: Memory, // 4kb RAM
     pub pc: u16,                // program counter, 2^12 = 4096
     ir: u16,                // index register
     stack: Vec<u16>,        // should have 16 elements at any one time
@@ -63,7 +63,7 @@ pub struct VM {
     sound_t: u8,            // sound timer
     display: Display,       // display graphics
     registers: [u8; NUM_REGISTERS],   // 16 general-purpose registers
-    pub keys: Keypad,
+    keys: Keypad,
     pub redraw: bool,
 }
 
@@ -86,6 +86,12 @@ impl VM {
         chip.memory.map_range(FONT_START_ADDR, FONT_END_ADDR - FONT_START_ADDR, &FONTS);
 
         chip
+    }
+
+    pub fn register_keypress(&mut self, keys: Option<u8>) {
+        if let Some(key) = keys {
+            self.keys.set_key(key);
+        }
     }
 
     pub fn load_program(&mut self, buf: &[u8]) {

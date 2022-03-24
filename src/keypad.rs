@@ -14,10 +14,6 @@ impl Keypad {
         self.keys |= 1 << key;
     }
 
-    pub fn set_keys(&mut self, keys: u16) {
-        self.keys = keys;
-    }
-
     pub fn is_pressed(&self, key_index: u8) -> bool {
         (self.keys & 1 << key_index) > 0
     }

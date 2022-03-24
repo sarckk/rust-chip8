@@ -977,12 +977,14 @@ name = "rust-chip8"
 version = "0.1.0"
 dependencies = [
  "getrandom",
+ "js-sys",
  "minifb",
  "num",
  "rand",
  "rodio",
  "wasm-bindgen",
  "wasm-bindgen-test",
+ "web-sys",
 ]
 
 [[package]]
