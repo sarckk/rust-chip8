@@ -3,9 +3,33 @@
   <head>
     <meta charset="utf-8">
     <title>Hello wasm-pack!</title>
+    <script src="//unpkg.com/alpinejs" defer></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css"/>
   </head>
   <body>
     <noscript>This page contains webassembly and javascript content, please enable javascript in your browser.</noscript>
     <script src="./bootstrap.js"></script>
+
+    <div class="main">
+        <h1>Chip-8 Emulator</h1>
+        <p>Written in Rust and compiled to WASM. Code <a href="">here</a></p>
+        <div class="container">
+            <canvas id="canvas" width="640" height="320"></canvas>
+        </div>
+        <label for="roms">Choose a ROM</label>
+        <div x-data="{roms: ['test','test2']}">
+        <select name="roms" id="roms">
+            <template x-for="rom in roms">
+                <option x-text="rom"></option>
+            </template>
+            <!-- <option value="test">Test ROM</option> -->
+            <!-- <option value="space_invader">Space Invader</option> -->
+            <!-- <option value="tetris">Tetris</option> -->
+        </select>
+        </div>
+    </div>
   </body>
 </html>

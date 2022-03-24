@@ -31,7 +31,7 @@ wasm-bindgen-test = "0.3.13"
 [dependencies.web-sys]
 version = "0.3.56"
 features = [
-
+    "console"
 ]
 
 [profile-release]

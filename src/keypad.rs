@@ -9,9 +9,18 @@ impl Keypad {
         }
     }
 
-    pub fn set_key(&mut self, key: u8) {
+    pub fn reset_keys(&mut self) {
+        self.keys = 0;
+    }
+
+    pub fn set_key(&mut self, key: u8, pressed: bool) {
         // key is between 0 and 16
-        self.keys |= 1 << key;
+        if pressed {
+            self.keys |= 1 << key;
+        } else {
+            // turn it off
+            self.keys &= !(1 << key);
+        }
     }
 
     pub fn is_pressed(&self, key_index: u8) -> bool {

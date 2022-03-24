@@ -55,7 +55,7 @@ fn get_nnn(instr: u16) -> u16 {
 
 
 pub struct VM {
-    memory: Memory, // 4kb RAM
+    pub memory: Memory, // 4kb RAM
     pub pc: u16,                // program counter, 2^12 = 4096
     ir: u16,                // index register
     stack: Vec<u16>,        // should have 16 elements at any one time
@@ -88,9 +88,13 @@ impl VM {
         chip
     }
 
-    pub fn register_keypress(&mut self, keys: Option<u8>) {
+    pub fn reset_keys(&mut self) {
+        self.keys.reset_keys();
+    }
+
+    pub fn set_key(&mut self, keys: Option<u8>, pressed: bool) {
         if let Some(key) = keys {
-            self.keys.set_key(key);
+            self.keys.set_key(key, pressed);
         }
     }
 

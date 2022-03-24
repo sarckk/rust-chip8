@@ -56,9 +56,9 @@ pub fn get_first_key(keys: Vec<Key>) -> Option<u8> {
         };
 
         
-        if let Some(exp) = exponent {
-            return exp;
-        } 
+        if !exponent.is_none() {
+            return exponent;
+        }
     }
 
     None
@@ -198,7 +198,8 @@ fn main() {
                 }
             }
 
-            chip.register_keypress(get_first_key(window.get_keys()));
+            chip.reset_keys();
+            chip.set_key(get_first_key(window.get_keys()), true);
 
             chip.emulate_cycle();
             finished_cycles += 1;
