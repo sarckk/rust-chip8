@@ -1,5 +1,3 @@
-use minifb::Key;
-
 pub struct Keypad {
     keys: u16, // bit field of which keys were pressed
 }
@@ -9,6 +7,15 @@ impl Keypad {
         Keypad {
             keys: 0,
         }
+    }
+
+    pub fn set_key(&mut self, key: u8) {
+        // key is between 0 and 16
+        self.keys |= 1 << key;
+    }
+
+    pub fn set_keys(&mut self, keys: u16) {
+        self.keys = keys;
     }
 
     pub fn is_pressed(&self, key_index: u8) -> bool {
@@ -31,38 +38,4 @@ impl Keypad {
 
         i
     }
-
-    pub fn register_keypresses(&mut self, keys: Vec<Key>) {
-        self.keys = 0;
-
-        for key in keys.iter() {
-            let exponent = match key {
-                Key::Key1 => Some(0x1),
-                Key::Key2 => Some(0x2),
-                Key::Key3 => Some(0x3),
-                Key::Key4 => Some(0xC),
-                Key::Q =>    Some(0x4),
-                Key::W =>    Some(0x5),
-                Key::E =>    Some(0x6),
-                Key::R =>    Some(0xD),
-                Key::A =>    Some(0x7),
-                Key::S =>    Some(0x8),
-                Key::D =>    Some(0x9),
-                Key::F =>    Some(0xE),
-                Key::Z =>    Some(0xA),
-                Key::X =>    Some(0x0),
-                Key::C =>    Some(0xB),
-                Key::V =>    Some(0xF),
-                _ => None
-            };
-
-            
-            if let Some(exp) = exponent {
-                self.keys = 1 << exp;
-                break;
-            } 
-        }
-    }
-
-
 }

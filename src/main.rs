@@ -1,11 +1,16 @@
 extern crate minifb;
+extern crate rodio;
 
 use std::process;
 use std::env;
 use std::io;
 use std::io::Write;
+use std::io::Read;
+use std::io::BufReader;
+use std::fs::File;
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
+
 use minifb::{Key, Window, WindowOptions};
 use rodio::{Sink, OutputStream, source::SineWave};
 
@@ -17,8 +22,6 @@ const CPU_CYCLE_RATE: u128 = 600;
 const PX_SCALING: usize = 10;  // pixel scaling factor
 const ON_PIXEL: u32 = 0x00FFFFFF; // white pixel
 
-
-
 #[inline]
 fn print_debug_help() {
     println!("USAGE: ");
@@ -29,6 +32,40 @@ fn print_debug_help() {
     println!("  help     - print list of commands available");
 }
 
+
+pub fn map_keypress_bits(keys: Vec<Key>) ->  u16 {
+    let mut keybits: u16 = 0;
+
+    for key in keys.iter() {
+        let exponent = match key {
+            Key::Key1 => Some(0x1),
+            Key::Key2 => Some(0x2),
+            Key::Key3 => Some(0x3),
+            Key::Key4 => Some(0xC),
+            Key::Q =>    Some(0x4),
+            Key::W =>    Some(0x5),
+            Key::E =>    Some(0x6),
+            Key::R =>    Some(0xD),
+            Key::A =>    Some(0x7),
+            Key::S =>    Some(0x8),
+            Key::D =>    Some(0x9),
+            Key::F =>    Some(0xE),
+            Key::Z =>    Some(0xA),
+            Key::X =>    Some(0x0),
+            Key::C =>    Some(0xB),
+            Key::V =>    Some(0xF),
+            _ => None
+        };
+
+        
+        if let Some(exp) = exponent {
+            keybits = 1 << exp;
+            break;
+        } 
+    }
+
+    keybits 
+}
 
 
 fn main() {
@@ -52,7 +89,15 @@ fn main() {
     }
 
     let file_path = &args[1];
-    let mut chip = VM::init(file_path);
+    let f = File::open(file_path).expect("Error: File not found");
+    let mut reader = BufReader::new(f);
+    let mut buf = Vec::new();
+
+    // TODO: add error
+    reader.read_to_end(&mut buf).unwrap(); 
+
+    let mut chip = VM::new();
+    chip.load_program(&buf);
 
     let win_width = DISPLAY_WIDTH * PX_SCALING;
     let win_height = DISPLAY_HEIGHT * PX_SCALING;
@@ -141,7 +186,7 @@ fn main() {
                         }
                         "p" => {
                             // print state of VM
-                            chip.print_lines_debug();
+                            println!("{:#?}", chip);
                         }
                         "ni" => {
                             // next instruction
@@ -156,7 +201,9 @@ fn main() {
                 }
             }
 
-            chip.keys.register_keypresses(window.get_keys());
+            chip.keys.set_keys(
+                map_keypress_bits( window.get_keys() )
+            );
 
             chip.emulate_cycle();
             finished_cycles += 1;

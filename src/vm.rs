@@ -2,9 +2,6 @@ use crate::memory::Memory;
 use crate::display::Display;
 use crate::keypad::Keypad;
 
-use std::io::Read;
-use std::io::BufReader;
-use std::fs::File;
 use std::fmt::LowerHex;
 use num::Integer;
 use rand::Rng;
@@ -56,11 +53,6 @@ fn get_nnn(instr: u16) -> u16 {
     instr & 0x0FFF
 }
 
-#[inline]
-fn print_line_debug<T: Integer + LowerHex>(name: &str, value: T) {
-    println!("{:<5}  {:#x}", format!("{}:", name), value);
-}
-
 
 pub struct VM {
     pub memory: Memory, // 4kb RAM
@@ -76,7 +68,7 @@ pub struct VM {
 }
 
 impl VM {
-    pub fn init(file_path: &str) -> VM {
+    pub fn new() -> VM {
         let mut chip = VM {
             memory: Memory::new(),
             pc: START_ADDR as u16,
@@ -90,25 +82,14 @@ impl VM {
             redraw: false,
         };
 
-        VM::load_program(&mut chip, file_path);
-        VM::load_fonts(&mut chip);
+        // load fonts
+        chip.memory.map_range(FONT_START_ADDR, FONT_END_ADDR - FONT_START_ADDR, &FONTS);
 
         chip
     }
 
-    fn load_program(chip: &mut VM, file_path: &str) {
-        let f = File::open(file_path).expect("Error: File not found");
-        let mut reader = BufReader::new(f);
-        let mut buf = Vec::new();
-
-        // TODO: add error
-        reader.read_to_end(&mut buf).unwrap(); 
-
-        chip.memory.map_range(START_ADDR, buf.len(), buf.as_slice());
-    }
-
-    fn load_fonts(chip: &mut VM) {
-        chip.memory.map_range(FONT_START_ADDR, FONT_END_ADDR - FONT_START_ADDR, &FONTS);
+    pub fn load_program(&mut self, buf: &[u8]) {
+        self.memory.map_range(START_ADDR, buf.len(), buf);
     }
 
     pub fn get_display(&self) -> &[u8] {
@@ -343,17 +324,25 @@ impl VM {
             _ => { unreachable!(); }
         }
     }
-
-    pub fn print_lines_debug(&self) {
-        print_line_debug("PC", self.pc);
-        print_line_debug("I", self.ir);
-        println!();
-        for i in 0..=0xf {
-            print_line_debug(format!("V{i}").as_ref(), self.registers[i]);
-        }
-        println!();
-        print_line_debug("ST", self.sound_t);
-        print_line_debug("DT", self.delay_t);
-    }
-
 }
+
+#[inline]
+fn get_line_debug<T: Integer + LowerHex>(name: &str, value: T) -> String {
+    format!("{:<5}  {:#x}", format!("{}:", name), value)
+}
+
+impl std::fmt::Debug for VM {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut vm_debug_info: Vec<String> = Vec::new();
+        vm_debug_info.push(get_line_debug("PC", self.pc));
+        vm_debug_info.push(get_line_debug("I", self.ir));
+        for i in 0..=0xf {
+            vm_debug_info.push(get_line_debug(format!("V{i}").as_ref(), self.registers[i]));
+        }
+        vm_debug_info.push(get_line_debug("ST", self.sound_t));
+        vm_debug_info.push(get_line_debug("DT", self.delay_t));
+        fmt.write_str(&vm_debug_info.join("\n")[..]).unwrap();
+        Ok(())
+    }
+}
+
