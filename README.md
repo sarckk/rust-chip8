@@ -35,3 +35,10 @@ npm run
 ```
 
 Then go to `localhost:8080` to view the result.
+
+### Credits
+The `/web` directory was bootstrapped with `npm init wasm-app`.
+
+Here are some helpful resources for getting started on Chip8 and WASM:
+- https://tobiasvl.github.io/blog/write-a-chip-8-emulator/
+- https://rustwasm.github.io/docs/book/
