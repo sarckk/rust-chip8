@@ -12,9 +12,13 @@ path = "src/lib.rs"
 name = "rchip"
 path = "src/main.rs"
 
+[features]
+default = ["console_error_panic_hook"]
+
 [dependencies]
 num = "0.4"
 rand = "0.8"
+console_error_panic_hook = { version = "0.1.6", optional=true }
 
 [target.'cfg(not(target_arch="wasm32"))'.dependencies]
 rodio = "0.15"
@@ -30,9 +34,7 @@ wasm-bindgen-test = "0.3.13"
 
 [dependencies.web-sys]
 version = "0.3.56"
-features = [
-    "console"
-]
+features = []
 
 [profile-release]
 opt-level = "s"

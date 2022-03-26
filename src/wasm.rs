@@ -1,3 +1,5 @@
+extern crate console_error_panic_hook;
+
 use wasm_bindgen::prelude::*;
 use crate::vm::VM;
 
@@ -25,6 +27,9 @@ macro_rules! log {
 impl WasmVM {
     #[wasm_bindgen(constructor)]
     pub fn new() -> WasmVM {
+        #[cfg(feature = "console_error_panic_hook")]
+        console_error_panic_hook::set_once();
+
         WasmVM {
             vm: VM::new(),
         }

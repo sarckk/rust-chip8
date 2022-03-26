@@ -7,6 +7,8 @@ const initRom = roms[0];
 
 const audioCtx = new(window.AudioContext || window.webkitAudioContext)();
 
+let currentAnimation = undefined;
+
 const cycle_loop = (vm) => {
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
@@ -48,7 +50,7 @@ const cycle_loop = (vm) => {
     }
 
 
-    window.requestAnimationFrame(() => {
+    currentAnimation = window.requestAnimationFrame(() => {
         cycle_loop(vm);
     });
 }
@@ -62,6 +64,11 @@ const load_rom = async (rom) => {
 }
 
 const run = async (rom) => {
+    if(currentAnimation) {
+        window.cancelAnimationFrame(currentAnimation);
+        currentAnimation = undefined;
+    }
+
     const vm = new WasmVM();
     vm.load_program(rom);
 
@@ -92,8 +99,10 @@ document.addEventListener("alpine:init", async () => {
 
         async runRom(romName) {
             const [rom, instructions] = await load_rom(romName); 
+            console.log(rom);
             this.instructions = instructions;
-            console.log(this.instructions);
+            // console.log("INSTRUCTIONS:");
+            // console.log(this.instructions);
             run(rom);
         },
 

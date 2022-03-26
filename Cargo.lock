@@ -976,6 +976,7 @@ dependencies = [
 name = "rust-chip8"
 version = "0.1.0"
 dependencies = [
+ "console_error_panic_hook",
  "getrandom",
  "js-sys",
  "minifb",

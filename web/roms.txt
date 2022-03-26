@@ -18,4 +18,3 @@ Connect 4 [David Winter]
 Animal Race [Brian Astle]
 Bowling [Gooitzen van der Wal]
 Craps [Camerlo Cortez, 1978]
-Lunar Lander (Udo Pernisz, 1979)
