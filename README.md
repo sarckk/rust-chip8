@@ -1,5 +1,10 @@
 # Chip-8 Emulator in Rust
 
+<p align="center">
+    <img src="https://raw.githubusercontent.com/sarckk/rust-chip8/master/docs/screenshot_desktop.png" alt="screenshot" />
+</p>
+
+
 ### Running the emulator for desktop
 ```bash
 cargo run <file_path> [-d]
@@ -19,6 +24,20 @@ help     - print list of commands available
 ```
 
 Currently, the `web/programs/` directory contains several ROMs and their descriptions from [here](https://github.com/kripod/chip8-roms).
+
+### Key mapping
+```
+      Chip-8                           Keyboard
++────+────+────+────+            +────+────+────+────+     
+| 1  | 2  | 3  | C  |            | 1  | 2  | 3  | 4  |
++────+────+────+────+            +────+────+────+────+
+| 4  | 5  | 6  | D  |            | Q  | W  | E  | R  |
++────+────+────+────+     -->    +────+────+────+────+    
+| 7  | 8  | 9  | E  |            | A  | S  | D  | F  |
++────+────+────+────+            +────+────+────+────+
+| A  | 0  | B  | F  |            | Z  | X  | C  | V  |
++────+────+────+────+            +────+────+────+────+
+```
 
 ### Building for WASM
 Additionally, we allow compiling to the `wasm32-unknown-unknown` target with `wasm-bindgen`. First, get `wasm-pack` [here](https://rustwasm.github.io/wasm-pack/installer/). After that, to build wasm binaries, run:
