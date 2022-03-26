@@ -5,6 +5,8 @@ import Alpine from 'alpinejs';
 const roms = test.split('\n');
 const initRom = roms[0];
 
+const audioCtx = new(window.AudioContext || window.webkitAudioContext)();
+
 const cycle_loop = (vm) => {
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
@@ -23,7 +25,15 @@ const cycle_loop = (vm) => {
     // runs at 60fps
     let beep = vm.decrement_timers();
     if(beep) {
-        // play a beep
+        const oscillator = audioCtx.createOscillator();
+        oscillator.type = 'square'
+        oscillator.frequency.value = 356; 
+        const volume = audioCtx.createGain();
+        volume.connect(audioCtx.destination);
+        oscillator.connect(volume);
+        volume.gain.value = 0.02;
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + 0.10);
     }
 
     if(redraw) {
