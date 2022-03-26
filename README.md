@@ -6,6 +6,9 @@
 
 
 ### Running the emulator for desktop
+First, [install rust](https://doc.rust-lang.org/book/ch01-01-installation.html) on your computer.
+
+Then run:
 ```bash
 cargo run <file_path> [-d]
 ```
