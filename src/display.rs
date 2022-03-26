@@ -12,6 +12,10 @@ impl Display {
         }
     }
 
+    pub fn as_ptr(&self) -> *const u8 {
+        self.pixels.as_ptr()
+    } 
+
     pub fn clear(&mut self) {
         self.pixels.fill(0);
     }

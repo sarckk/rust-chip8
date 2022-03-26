@@ -3,7 +3,6 @@
   <head>
     <meta charset="utf-8">
     <title>Hello wasm-pack!</title>
-    <script src="//unpkg.com/alpinejs" defer></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
@@ -13,22 +12,31 @@
     <noscript>This page contains webassembly and javascript content, please enable javascript in your browser.</noscript>
     <script src="./bootstrap.js"></script>
 
-    <div class="main">
+    <div class="main" x-data='chip8'>
         <h1>Chip-8 Emulator</h1>
-        <p>Written in Rust and compiled to WASM. Code <a href="">here</a></p>
+        <p>Written in Rust and compiled to WASM. Code <a href="https://github.com/sarckk/rust-chip8" target="_blank">here</a></p>
+        <div class="rom-section">
+            <div>
+                <label for="roms">Choose a ROM: </label>
+                <select name="roms" id="roms" x-model="selectedRom" 
+                        x-init="$watch('selectedRom', value => runRom(value))">
+                    <template x-for="rom in roms">
+                        <option :value="rom" x-text="rom"></option>
+                    </template>
+                </select>
+            </div>
+            <span class="separator">|</span>
+            <div>
+                <label for="rom-upload">Upload ROM (.ch8 file):  </label>
+                <input type="file" id="rom-upload" 
+                @change="uploadRom" accept=".ch8"/>
+            </div>
+        </div>
         <div class="container">
             <canvas id="canvas" width="640" height="320"></canvas>
         </div>
-        <label for="roms">Choose a ROM</label>
-        <div x-data="{roms: ['test','test2']}">
-        <select name="roms" id="roms">
-            <template x-for="rom in roms">
-                <option x-text="rom"></option>
-            </template>
-            <!-- <option value="test">Test ROM</option> -->
-            <!-- <option value="space_invader">Space Invader</option> -->
-            <!-- <option value="tetris">Tetris</option> -->
-        </select>
+        <div id="instructions">
+            <pre x-text="instructions"></pre>
         </div>
     </div>
   </body>

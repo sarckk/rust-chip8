@@ -1,15 +1,24 @@
+* {
+    box-sizing: border-box;
+}
+    
+html, body {
+    padding: 0;
+    margin: 0;
+}
+
 body {
-    background-color: black;
-    color: white;
+    background-color: #0f0f0f;
+    color: #e0e0e0;
     font-family: sans-serif;
 }
 
 a {
-    color: grey;
+    color: #ee82ee;
 }
 
 .main {
-    border: 1px solid black;
+    border: 1px solid #535353;
     height: 100vh;
     display: flex;
     flex-direction:column;
@@ -18,14 +27,43 @@ a {
 
 h1 {
     font-family: 'Press Start 2P', cursive;
-    margin-bottom: 0;
 }
 
 .container {
-    margin: 1rem 0;
+    margin: 2rem 0;
     padding: 1rem;
-    border: 1px solid white;
+    border: 1px solid #e0e0e0;
 }
 
-canvas {
+.separator {
+    font-family: 'Press Start 2P', cursive;
+    font-size: 20px;
+}
+
+.rom-section {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.key-map {
+    text-align: center;
+}
+
+.key-map pre {
+    display: inline-block;
+    text-align: center;
+}
+
+#instructions {
+    max-width: 550px;
+    display: inline-block;
+    overflow-y: scroll;
+    margin-bottom: 2rem;
+}
+
+#instructions pre {
+    white-space: pre-wrap;
 }

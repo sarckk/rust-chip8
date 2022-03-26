@@ -57,12 +57,12 @@ fn get_nnn(instr: u16) -> u16 {
 pub struct VM {
     pub memory: Memory, // 4kb RAM
     pub pc: u16,                // program counter, 2^12 = 4096
-    ir: u16,                // index register
+    pub ir: u16,                // index register
     stack: Vec<u16>,        // should have 16 elements at any one time
-    delay_t: u8,            // delay timer
-    sound_t: u8,            // sound timer
-    display: Display,       // display graphics
-    registers: [u8; NUM_REGISTERS],   // 16 general-purpose registers
+    pub delay_t: u8,            // delay timer
+    pub sound_t: u8,            // sound timer
+    pub display: Display,       // display graphics
+    pub registers: [u8; NUM_REGISTERS],   // 16 general-purpose registers
     keys: Keypad,
     pub redraw: bool,
 }
@@ -341,7 +341,7 @@ fn get_line_debug<T: Integer + LowerHex>(name: &str, value: T) -> String {
     format!("{:<5}  {:#x}", format!("{}:", name), value)
 }
 
-impl std::fmt::Debug for VM {
+impl std::fmt::Display for VM {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut vm_debug_info: Vec<String> = Vec::new();
         vm_debug_info.push(get_line_debug("PC", self.pc));

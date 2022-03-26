@@ -183,7 +183,7 @@ fn main() {
                         }
                         "p" => {
                             // print state of VM
-                            println!("{:#?}", chip);
+                            println!("{}", chip);
                         }
                         "ni" => {
                             // next instruction

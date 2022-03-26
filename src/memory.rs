@@ -11,6 +11,10 @@ impl Memory {
         }
     }
 
+    pub fn as_ptr(&self) -> *const u8 {
+        self.memory.as_ptr()
+    }
+
     pub fn get_instr(&self, pc: u16) -> u16 {
         (self.memory[pc as usize] as u16) << 8 | self.memory[pc as usize+1] as u16
     }
